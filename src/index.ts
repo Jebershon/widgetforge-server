@@ -17,6 +17,11 @@ const PORT = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json());
 
+// --- Basic Health Check ---
+app.get('/', (req: Request, res: Response) => {
+  res.send('<h1>🚀 WidgetForge API</h1><p>The backend is live and ready to bundle widgets.</p>');
+});
+
 // --- Routes ---
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'WidgetForge Generator Backend is running.' });
