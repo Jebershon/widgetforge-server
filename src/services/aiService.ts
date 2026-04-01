@@ -142,6 +142,21 @@ export async function generateWidgetCode(
       Example: 
       export interface ActionValue { readonly canExecute: boolean; readonly isExecuting: boolean; execute(): void; }
       export interface EditableValue<T> { readonly value?: T; readonly readOnly: boolean; setValue(value?: T): void; }
+      export interface ListValue { readonly items?: any[]; readonly status: string; }
+    - ITERATING OVER LISTS:
+      - If XML defines a "datasource" (ListValue), you MUST map over its items: props.myDataSource.items?.map(item => ...)
+      - If XML defines an "object" with isList="true", it is a standard array: props.myObjectList?.map(item => ...)
+    - CRITICAL — REACT ERROR #31 PREVENTION:
+      Objects are NOT valid React children. NEVER pass a raw object/item into createElement as a child.
+      WRONG:   createElement("span", null, item)           // item is an object → React error #31
+      WRONG:   createElement("span", null, props.myAttr)   // myAttr is an EditableValue object → error
+      CORRECT: createElement("span", null, String(item.someField ?? ""))
+      CORRECT: createElement("span", null, props.myAttr?.value ?? "")
+      Rules:
+      - Always extract .value from EditableValue/DynamicValue before rendering.
+      - When iterating datasource items, use the linked attribute getter (e.g. props.displayAttr?.get(item)?.value) or render a string/number, never the item object itself.
+      - For object lists, access specific sub-property values (item.myKey), never render the whole item.
+      - If unsure about a value's type, wrap it: String(value ?? "")
     - For STATIC widgets (like an India Blog with no inputs), avoid any Mendix properties in XML and Props. Just use a clean React component.
     ${isNative ? '- Use components from "react-native" (View, Text, StyleSheet).' : '- Use standard React/HTML tags (div, span, etc.) via createElement.'}
 
