@@ -78,23 +78,53 @@ export async function generateWidgetCode(
     1. string:      <property key="..." type="string" defaultValue="...">
     2. boolean:     <property key="..." type="boolean" defaultValue="true|false">
     3. integer:     <property key="..." type="integer" defaultValue="0">
-    4. textTemplate:<property key="..." type="textTemplate">
-    5. action:      <property key="..." type="action">
+    4. decimal:     <property key="..." type="decimal" defaultValue="0.0">
+    5. textTemplate:<property key="..." type="textTemplate">
+    6. action:      <property key="..." type="action">
                       <caption>...</caption><description>...</description>
                       <returnType type="Void" />
                     </property>
-    6. attribute:   <property key="..." type="attribute">
+    7. attribute:   <property key="..." type="attribute">
                       <caption>...</caption><description>...</description>
                       <attributeTypes>
                         <attributeType name="String"/> <!-- or Integer, Boolean, DateTime, Decimal -->
                       </attributeTypes>
                     </property>
-    7. enumeration: <property key="..." type="enumeration" defaultValue="Key1">
+    8. enumeration: <property key="..." type="enumeration" defaultValue="Key1">
                       <caption>...</caption><description>...</description>
                       <enumerationValues>
                         <enumerationValue key="Key1">Label 1</enumerationValue>
                         <enumerationValue key="Key2">Label 2</enumerationValue>
                       </enumerationValues>
+                    </property>
+    9. datasource:  <property key="..." type="datasource" isList="true" required="false">
+    10. widgets:    <property key="..." type="widgets" dataSource="[datasource_key]" required="false">
+    11. object:     <property key="..." type="object" isList="true">
+                      <caption>...</caption><description>...</description>
+                      <properties>
+                        <propertyGroup caption="Object properties">
+                          <property key="..." type="string">...</property>
+                        </propertyGroup>
+                      </properties>
+                    </property>
+    12. icon:       <property key="..." type="icon" required="false">
+    13. image:      <property key="..." type="image" allowUpload="true|false" required="false">
+    14. file:       <property key="..." type="file" allowUpload="true|false" required="false">
+    15. expression: <property key="..." type="expression" required="false">
+                      <caption>...</caption><description>...</description>
+                      <returnType type="String" /> <!-- or Boolean, DateTime, Decimal, Integer -->
+                    </property>
+    16. association:<property key="..." type="association" selectableObjects="[datasource_key]">
+                      <caption>...</caption><description>...</description>
+                      <associationTypes>
+                        <associationType name="Reference"/> <!-- or ReferenceSet -->
+                      </associationTypes>
+                    </property>
+    17. selection:  <property key="..." type="selection" dataSource="[datasource_key]">
+                      <caption>...</caption><description>...</description>
+                      <selectionTypes>
+                        <selectionType name="Single" /> <!-- or Multi, None -->
+                      </selectionTypes>
                     </property>
     - Any type not on this list (e.g. invalid hallucinated types) will crash Mendix.
 
