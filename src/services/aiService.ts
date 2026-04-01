@@ -9,110 +9,154 @@ export type AIProvider = "gemini" | "openai" | "anthropic";
 
 export interface AIResponse {
   aiXml: string;
-  aiJsx: string;
+  aiTsx: string;
   aiCss?: string;
   dependencies?: Record<string, string>;
 }
 
-export async function generateWidgetCode(description: string, widgetName: string): Promise<AIResponse> {
-  const provider = (process.env.AI_PROVIDER || "gemini") as AIProvider;
+
+export async function generateWidgetCode(
+  description: string, 
+  widgetName: string, 
+  platform: 'web' | 'native' = 'web',
+  provider: AIProvider = 'gemini',
+  apiKey: string = '',
+  modelName: string = ''
+): Promise<AIResponse> {
+  const providerToUse = provider || (process.env.AI_PROVIDER || "gemini") as AIProvider;
+  const isNative = platform === 'native';
   
   const prompt = `
-    You are an expert Mendix and React developer. Generate a fully functional, production-quality Mendix pluggable widget named "${widgetName}".
+    ACT AS a Senior Mendix and React developer. Generate a production-ready Mendix 10 Pluggable Widget for WidgetForge.
 
-    Widget description: "${description}"
+    WIDGET NAME: ${widgetName}
+    WIDGET FUNCTION: ${description}
+    TARGET PLATFORM: ${platform.toUpperCase()}
 
+    ════════════════════════════════════════════
+    OUTPUT FORMAT — FOLLOW EXACTLY
+    ════════════════════════════════════════════
     Return a single valid JSON object with these keys:
-    - "aiXml"  : The Mendix widget XML definition (src/${widgetName}.xml)
-    - "aiJsx"  : The full React TSX component (src/${widgetName}.tsx)
-    - "aiCss"  : (Optional) CSS string for styling. Include if the widget has custom styles.
-    - "dependencies" : (Optional) Extra npm packages needed, e.g. { "date-fns": "^3.0.0" }
+    - "aiXml": The Mendix widget XML definition (src/${widgetName}.xml)
+    - "aiTsx": The React TSX component (src/${widgetName}.tsx)
+    - "aiCss": ${isNative ? '""' : 'Scoped CSS component styles (src/ui/' + widgetName + '.css)'}
+    - "dependencies": Extra npm packages needed, e.g. { "lucide-react": "*" } (empty object {} if none)
 
-    ──────────────────────────────────────────
+
+    ════════════════════════════════════════════
     XML RULES (src/${widgetName}.xml)
-    ──────────────────────────────────────────
+    ════════════════════════════════════════════
     - Root <widget> tag MUST have ALL of these attributes:
         id="com.widgetforge.${widgetName.toLowerCase()}.${widgetName}"
         pluginWidget="true"
         needsEntityContext="false"
         offlineCapable="true"
-        supportedPlatform="Web"
+        supportedPlatform="${isNative ? 'Native' : 'Web'}"
         xmlns="http://www.mendix.com/widget/1.0/"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.mendix.com/widget/1.0/ ../node_modules/mendix/custom_widget.xsd"
-    - Include <name>${widgetName}</name> and <description> inside <widget>.
-    - Every <property> MUST be inside a <propertyGroup caption="..."> tag.
-    - The ONLY valid child elements of <property> are <caption> and <description>.
-    - "defaultValue" MUST be an XML attribute on <property>, never a child element.
-    - "required" MUST be specified as a <property> attribute (true/false).
-    - Valid property types: string, boolean, integer, decimal, action, attribute, expression, file, icon, object, widgets.
-    - The <properties> element is ALWAYS required, even if the widget has no properties. In that case, use: <properties></properties>
+    - Include <name>${widgetName}</name> and <description>${description.slice(0, 100)}</description> inside <widget>.
+    
+    CRITICAL STRUCTURAL SCHEMA (Follow this exactly):
+    <widget id="..." ...>
+      <name>...</name>
+      <description>...</description>
+      <properties>
+        <propertyGroup caption="General">
+          <property key="prop1" type="string" ...>
+            <caption>...</caption>
+            <description>...</description>
+          </property>
+        </propertyGroup>
+      </properties>
+    </widget>
 
-    ──────────────────────────────────────────
+    - ALL <propertyGroup> tags MUST be strictly nested directly inside the <properties> block. Do not orphan them.
+    - Every <property> tag MUST be inside a <propertyGroup caption="..."> tag.
+
+    VALID PROPERTY TYPES & STUCTURE EXAMPLES:
+    1. string:      <property key="..." type="string" defaultValue="...">
+    2. boolean:     <property key="..." type="boolean" defaultValue="true|false">
+    3. integer:     <property key="..." type="integer" defaultValue="0">
+    4. textTemplate:<property key="..." type="textTemplate">
+    5. action:      <property key="..." type="action">
+                      <caption>...</caption><description>...</description>
+                      <returnType type="Void" />
+                    </property>
+    6. attribute:   <property key="..." type="attribute">
+                      <caption>...</caption><description>...</description>
+                      <attributeTypes>
+                        <attributeType name="String"/> <!-- or Integer, Boolean, DateTime, Decimal -->
+                      </attributeTypes>
+                    </property>
+    7. enumeration: <property key="..." type="enumeration" defaultValue="Key1">
+                      <caption>...</caption><description>...</description>
+                      <enumerationValues>
+                        <enumerationValue key="Key1">Label 1</enumerationValue>
+                        <enumerationValue key="Key2">Label 2</enumerationValue>
+                      </enumerationValues>
+                    </property>
+    - Any type not on this list (e.g. invalid hallucinated types) will crash Mendix.
+
+    ════════════════════════════════════════════
     TSX RULES (src/${widgetName}.tsx)
-    ──────────────────────────────────────────
-    - Export a named function component: export function ${widgetName}({ ... }: Props) { ... }
-    - ALWAYS define a Props interface whose fields match the XML properties.
-    - You may use ANY React features: useState, useEffect, useRef, useCallback, useMemo, useReducer, custom hooks, context, etc.
-    - You may make HTTP/fetch calls (useEffect + fetch) for real data (weather APIs, public REST APIs, etc.).
-    - You may use complex UI patterns: modals, tabs, accordions, drag-and-drop, infinite scroll, virtual lists, etc.
-    - For complex widgets (calendar, mailbox, forms, charts, etc.) implement full interactivity — don't stub or simplify.
-    - If a 3rd-party library significantly improves quality (e.g. "react-calendar", "recharts", "date-fns"), include it in "dependencies" and import it in the JSX.
-    - If you generate aiCss, import it: import "./ui/${widgetName}.css"; at the top of the TSX file.
-    - Only import what you actually use. Unused imports break the build.
-    - FORBIDDEN IMPORTS (will cause build failure — NEVER use these):
-        ✗ import ... from "mendix"
-        ✗ import ... from "mendix/custom-widget"
-        ✗ import ... from "mendix/components/..."
-        ✗ import ... from any "mendix/*" path
-        ✗ import ... from "@mendix/pluggable-widgets-api" or any "@mendix/*" scoped package
-        ✗ PageProps, ContainerProps, WidgetProps, ClassProperties (Mendix-internal types)
-        ✗ createElement from "react" when using JSX syntax
-    - Use React types (FC, ReactElement, CSSProperties, MouseEvent, etc.) from "react" if needed.
-    - Inline styles are fine. CSS custom properties (e.g. var(--neon-color)) are encouraged for theming.
+    ════════════════════════════════════════════
 
-    ──────────────────────────────────────────
-    QUALITY EXPECTATIONS
-    ──────────────────────────────────────────
-    - For a calendar widget: render a real monthly grid, clickable days, event support.
-    - For a mailbox widget: show an inbox list, a reading pane, compose button, realistic mock data.
-    - For a form widget: full validation, error messages, submit handler, accessible labels.
-    - For a chart widget: use a library (recharts, chart.js) or draw on a <canvas>.
-    - For a data widget: fetch from a public API, handle loading and error states.
-    - In short: build a real, working widget — not a placeholder or a demo skeleton.
+    - Line 1 MUST be: import React, { createElement, useState, useRef, useEffect, useCallback } from "react";
+    - Use createElement() for ALL elements. NEVER use JSX angle-bracket syntax (<div>, <span>, etc.).
+    - Use a named export: export function ${widgetName}(props: ${widgetName}Props) { ... }
+    - Define a Props interface matching the XML property keys.
+    - DO NOT import CSS. Do NOT write: import "./ui/${widgetName}.css";
+    - DO NOT import from "mendix/", "@mendix/", or use mx.ui.* globals.
+    - MENDIX TYPE SHIMS: Since you cannot import from 'mendix', if your Props interface uses Mendix types, you MUST define them as empty interfaces or simple types at the top of the file. 
+      Example: 
+      export interface ActionValue { readonly canExecute: boolean; readonly isExecuting: boolean; execute(): void; }
+      export interface EditableValue<T> { readonly value?: T; readonly readOnly: boolean; setValue(value?: T): void; }
+    - For STATIC widgets (like an India Blog with no inputs), avoid any Mendix properties in XML and Props. Just use a clean React component.
+    ${isNative ? '- Use components from "react-native" (View, Text, StyleSheet).' : '- Use standard React/HTML tags (div, span, etc.) via createElement.'}
+
+
+    ════════════════════════════════════════════
+    CSS RULES (src/ui/${widgetName}.css)
+    ════════════════════════════════════════════
+    - EVERY selector must start with .widget-${widgetName.toLowerCase()}
+    - Include root reset: .widget-${widgetName.toLowerCase()}, .widget-${widgetName.toLowerCase()} * { box-sizing: border-box; }
 
     Return raw JSON only, no markdown code blocks.
   `;
 
 
-  switch (provider) {
+  switch (providerToUse) {
     case "gemini":
-      return await callGemini(prompt);
+      return await callGemini(prompt, apiKey, modelName);
     case "openai":
-      return await callOpenAI(prompt);
+      return await callOpenAI(prompt, apiKey, modelName);
     case "anthropic":
-      return await callAnthropic(prompt);
+      return await callAnthropic(prompt, apiKey, modelName);
     default:
-      throw new Error(`Unsupported AI provider: ${provider}`);
+      throw new Error(`Unsupported AI provider: ${providerToUse}`);
   }
 }
 
-async function callGemini(prompt: string): Promise<AIResponse> {
-  const apiKey = process.env.GEMINI_API_KEY || "";
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set in .env");
+async function callGemini(prompt: string, apiKey: string, injectedModelName: string): Promise<AIResponse> {
+  const keyToUse = apiKey || process.env.GEMINI_API_KEY || "";
+  if (!keyToUse) throw new Error("Google Gemini API Key is missing. Please configure it in the UI.");
   
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const genAI = new GoogleGenerativeAI(keyToUse);
   
   // List of models to try if the primary one fails
-  const modelsToTry = [
-    process.env.GEMINI_MODEL,
-    "gemini-2.5-flash", 
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-pro",
-    "gemini-1.5-pro"
-  ].filter(Boolean) as string[];
+  // If the user explicitly provided a model in the config, we should respect that and not fallback randomly.
+  const modelsToTry = injectedModelName 
+    ? [injectedModelName] 
+    : [
+        process.env.GEMINI_MODEL,
+        "gemini-2.5-flash", 
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-pro",
+        "gemini-1.5-pro"
+      ].filter(Boolean) as string[];
 
   let lastError: any = null;
 
@@ -122,11 +166,8 @@ async function callGemini(prompt: string): Promise<AIResponse> {
         model: modelName,
         generationConfig: {
           maxOutputTokens: 8192,
-          temperature: 0.4,
-          // Force pure JSON output — no markdown, no preamble, no backticks.
-          // Supported by Gemini 1.5+ models.
-          responseMimeType: 'application/json',
-        } as any
+          temperature: 0.4
+        }
       });
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -146,26 +187,31 @@ async function callGemini(prompt: string): Promise<AIResponse> {
   throw new Error(`[V2-Gemini] All models failed. Last error: ${lastError?.message}.`);
 }
 
-async function callOpenAI(prompt: string): Promise<AIResponse> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+async function callOpenAI(prompt: string, apiKey: string, injectedModelName: string): Promise<AIResponse> {
+  const keyToUse = apiKey || process.env.OPENAI_API_KEY || "";
+  if (!keyToUse) throw new Error("OpenAI API Key is missing. Please configure it in the UI.");
+  
+  const openai = new OpenAI({ apiKey: keyToUse });
   try {
     const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
+      model: injectedModelName || process.env.OPENAI_MODEL || "gpt-4o",
+      messages: [{ role: "user", content: prompt }]
     });
     
     const content = response.choices[0].message.content || "{}";
-    return JSON.parse(content);
+    return parseAIResponse(content);
   } catch (e: any) {
     throw new Error(`[V2-OpenAI] OpenAI failed: ${e.message}`);
   }
 }
 
-async function callAnthropic(prompt: string): Promise<AIResponse> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+async function callAnthropic(prompt: string, apiKey: string, injectedModelName: string): Promise<AIResponse> {
+  const keyToUse = apiKey || process.env.ANTHROPIC_API_KEY || "";
+  if (!keyToUse) throw new Error("Anthropic API Key is missing. Please configure it in the UI.");
+  
+  const anthropic = new Anthropic({ apiKey: keyToUse });
   const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307",
+    model: injectedModelName || process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307",
     max_tokens: 4000,
     messages: [{ role: "user", content: prompt }],
   });
@@ -200,33 +246,40 @@ function parseAIResponse(text: string): AIResponse {
   }
 }
 
-export async function testAIConnection(): Promise<{ provider: string; model: string; status: string }> {
-  const provider = (process.env.AI_PROVIDER || "gemini") as AIProvider;
+export async function testAIConnection(
+  injectedProvider?: string,
+  injectedApiKey?: string,
+  injectedModelName?: string
+): Promise<{ provider: string; model: string; status: string }> {
+  const provider = (injectedProvider || process.env.AI_PROVIDER || "gemini") as AIProvider;
   
   try {
     switch (provider) {
       case "gemini": {
-        const apiKey = process.env.GEMINI_API_KEY || "";
+        const apiKey = injectedApiKey || process.env.GEMINI_API_KEY || "";
         if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
         const genAI = new GoogleGenerativeAI(apiKey);
-        const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+        const modelName = injectedModelName || process.env.GEMINI_MODEL || "gemini-2.5-flash";
         const model = genAI.getGenerativeModel({ model: modelName });
         await model.generateContent("Respond with the word 'Ready'.");
         return { provider, model: modelName, status: "Ready" };
       }
       case "openai": {
-        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-        const modelName = process.env.OPENAI_MODEL || "gpt-4o-mini";
+        const apiKey = injectedApiKey || process.env.OPENAI_API_KEY || "";
+        if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+        const openai = new OpenAI({ apiKey });
+        const modelName = injectedModelName || process.env.OPENAI_MODEL || "gpt-4o-mini";
         await openai.chat.completions.create({
           model: modelName,
-          messages: [{ role: "user", content: "Respond with the word 'Ready'." }],
-          max_tokens: 10,
+          messages: [{ role: "user", content: "Respond with the word 'Ready'." }]
         });
         return { provider, model: modelName, status: "Ready" };
       }
       case "anthropic": {
-        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const modelName = process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307";
+        const apiKey = injectedApiKey || process.env.ANTHROPIC_API_KEY || "";
+        if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+        const anthropic = new Anthropic({ apiKey });
+        const modelName = injectedModelName || process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307";
         await anthropic.messages.create({
           model: modelName,
           max_tokens: 10,
@@ -241,3 +294,49 @@ export async function testAIConnection(): Promise<{ provider: string; model: str
     throw new Error(`AI connectivity test failed for ${provider}: ${error.message}`);
   }
 }
+
+export async function getAvailableModels(
+  injectedProvider?: string,
+  injectedApiKey?: string
+): Promise<string[]> {
+  const provider = (injectedProvider || process.env.AI_PROVIDER || "gemini") as AIProvider;
+  
+  try {
+    switch (provider) {
+      case "gemini": {
+        const apiKey = injectedApiKey || process.env.GEMINI_API_KEY || "";
+        if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Gemini API error: ${response.statusText} - ${text}`);
+        }
+        const data = await response.json();
+        // Return only the model identifiers that support generateContent without the "models/" prefix
+        return data.models
+          .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m: any) => m.name.replace('models/', ''));
+      }
+      case "openai": {
+        const apiKey = injectedApiKey || process.env.OPENAI_API_KEY || "";
+        if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+        const openai = new OpenAI({ apiKey });
+        const list = await openai.models.list();
+        return list.data.map((m: any) => m.id);
+      }
+      case "anthropic": {
+        const apiKey = injectedApiKey || process.env.ANTHROPIC_API_KEY || "";
+        if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+        
+        const anthropic = new Anthropic({ apiKey });
+        const list = await anthropic.models.list();
+        return list.data.map((m: any) => m.id);
+      }
+      default:
+        throw new Error(`Unsupported AI provider: ${provider}`);
+    }
+  } catch (error: any) {
+    throw new Error(`Failed to fetch models for ${provider}: ${error.message}`);
+  }
+}
+

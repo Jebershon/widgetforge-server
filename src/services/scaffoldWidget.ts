@@ -4,6 +4,7 @@ import path from 'path';
 interface ScaffoldOptions {
   widgetName: string;
   description: string;
+  platform?: 'web' | 'native';
   organization?: string;
   version?: string;
   author?: string;
@@ -13,14 +14,14 @@ interface ScaffoldOptions {
 }
 
 /**
- * Programmatically scaffolds a Mendix pluggable widget (TypeScript, Function, Web, Empty).
- * This replaces the interactive `@mendix/generator-widget` CLI which cannot be automated
- * because Inquirer.js list-type prompts use raw terminal mode incompatible with piped stdin.
+ * Programmatically scaffolds a Mendix pluggable widget (TypeScript, Function, Web/Native, Empty).
+ * This replaces the interactive @mendix/generator-widget CLI.
  */
 export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): Promise<void> {
   const {
     widgetName,
     description,
+    platform = 'web',
     organization = 'com.widgetforge',
     version = '1.0.0',
     author = 'widgetforge by Jebershon vetha singh',
@@ -30,10 +31,10 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
   } = opts;
 
   const packageName = widgetName.toLowerCase();
-  // packagePath uses dot notation (as in package.json)
   const packagePath = organization.trim().toLowerCase();
-  // packagePathXml uses slash notation (as in package.xml file paths)
   const packagePathXml = packagePath.replace(/\./g, '/');
+
+  const isNative = platform === 'native';
 
   // Create directory structure
   await fs.mkdir(path.join(outputDir, 'src', 'components'), { recursive: true });
@@ -56,13 +57,13 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
     },
     packagePath: packagePath,
     scripts: {
-      start: 'pluggable-widgets-tools start:server',
-      dev: 'pluggable-widgets-tools start:web',
-      build: 'pluggable-widgets-tools build:web',
+      start: `pluggable-widgets-tools start:${platform}`,
+      dev: `pluggable-widgets-tools start:${platform}`,
+      build: `pluggable-widgets-tools build:${platform}`,
       lint: 'pluggable-widgets-tools lint',
       'lint:fix': 'pluggable-widgets-tools lint:fix',
       prerelease: 'npm run lint',
-      release: 'pluggable-widgets-tools release:web',
+      release: `pluggable-widgets-tools release:${platform}`,
     },
     devDependencies: {
       '@mendix/pluggable-widgets-tools': '^11.6.0',
@@ -70,6 +71,7 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
     },
     dependencies: {
       classnames: '^2.2.6',
+      ...(isNative ? { "react-native": "*" } : {}),
       ...customDependencies,
     },
     resolutions: {
@@ -96,7 +98,13 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
     compilerOptions: {
       baseUrl: './',
       noUnusedLocals: false,
-      noUnusedParameters: false
+      noUnusedParameters: false,
+      ...(isNative ? {
+        jsx: 'react-native',
+        target: 'esnext',
+        module: 'esnext',
+        lib: ['esnext']
+      } : {})
     },
     include: ['./src', './typings'],
   };
@@ -114,18 +122,18 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
         </widgetFiles>
         <files>
             <file path="${packagePathXml}/${packageName}/${widgetName}.js"/>
-            <file path="${packagePathXml}/${packageName}/ui/${widgetName}.css"/>
+            ${!isNative ? `<file path="${packagePathXml}/${packageName}/ui/${widgetName}.css"/>` : ''}
         </files>
     </clientModule>
 </package>
 `;
   await fs.writeFile(path.join(outputDir, 'src', 'package.xml'), packageXml);
 
-  // 4. src/WidgetName.xml (default — will be overwritten by AI XML)
+  // 4. src/WidgetName.xml
   const nameCamelCase = widgetName.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
   const widgetXml = `<?xml version="1.0" encoding="utf-8"?>
 <widget id="${packagePath}.${packageName}.${widgetName}" pluginWidget="true" needsEntityContext="true" offlineCapable="true"
-        supportedPlatform="Web"
+        supportedPlatform="${isNative ? 'Native' : 'Web'}"
         xmlns="http://www.mendix.com/widget/1.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.mendix.com/widget/1.0/ ../node_modules/mendix/custom_widget.xsd">
     <name>${nameCamelCase}</name>
@@ -143,14 +151,25 @@ export async function scaffoldWidget(outputDir: string, opts: ScaffoldOptions): 
 `;
   await fs.writeFile(path.join(outputDir, 'src', `${widgetName}.xml`), widgetXml);
 
-  // 5. src/WidgetName.tsx (default — will be overwritten by AI JSX)
-  const widgetTsx = `import { FunctionComponent } from "react";
+  // 5. src/WidgetName.tsx
+  const webBoilerplate = `import { FunctionComponent } from "react";
  
 export function ${widgetName}() {
     return <div className="widget-${packageName}">Hello from ${widgetName}</div>;
 }
 `;
-  await fs.writeFile(path.join(outputDir, 'src', `${widgetName}.tsx`), widgetTsx);
+  const nativeBoilerplate = `import { ReactElement, createElement } from "react";
+import { View, Text } from "react-native";
+
+export function ${widgetName}(): ReactElement {
+    return (
+        <View>
+            <Text>Hello from ${widgetName} Native</Text>
+        </View>
+    );
+}
+`;
+  await fs.writeFile(path.join(outputDir, 'src', `${widgetName}.tsx`), isNative ? nativeBoilerplate : webBoilerplate);
 
   // 6. src/WidgetName.editorPreview.tsx (minimal)
   const editorPreview = `import { createElement } from "react";
@@ -173,5 +192,7 @@ export function getPreviewCss(): string {
   await fs.writeFile(path.join(outputDir, 'src', `${widgetName}.editorConfig.ts`), editorConfig);
 
   // 8. src/ui/WidgetName.css
-  await fs.writeFile(path.join(outputDir, 'src', 'ui', `${widgetName}.css`), ``);
+  if (!isNative) {
+    await fs.writeFile(path.join(outputDir, 'src', 'ui', `${widgetName}.css`), ``);
+  }
 }
