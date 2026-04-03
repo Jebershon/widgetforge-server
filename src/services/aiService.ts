@@ -252,6 +252,34 @@ export async function generateWidgetCode(
            <description>Data source for items</description>
        </property>
 
+    ════════════════════════════════════════════
+    DATASOURCE USAGE RULE (STRICT)
+    ════════════════════════════════════════════
+    1. If type="datasource" is used:
+       - It MUST ALWAYS include:
+         isList="true"
+       Example:
+       <property key="data" type="datasource" isList="true" />
+    2. NEVER generate type="datasource" without isList="true"
+    3. If the widget requirement is simple (e.g., displaying fields like Name, Email, Age):
+       → DO NOT use datasource at all
+       → Use individual attribute properties instead
+    4. Use type="attribute" for each field:
+       Example:
+       <property key="nameAttr" type="attribute">
+       <property key="emailAttr" type="attribute">
+       <property key="ageAttr" type="attribute">
+    5. These attributes:
+       - Do NOT require dataSource
+       - Will bind directly to a context object
+    6. VALIDATION:
+       - If type="datasource" exists → ensure isList="true"
+       - If simple UI → prefer attribute over datasource
+
+    FAILURE WILL CAUSE:
+    "Property must have isList='true' as it is of type DataSource"
+
+
     16. SELECTION
        XML attrs: key(req), type="selection", dataSource="<datasource_key>"(req), onChange="<action_key>"(opt)
        Child elements: <caption>(req), <description>(req), <selectionTypes>(req)
@@ -338,19 +366,23 @@ export async function generateWidgetCode(
     1. Scan ALL <property type="attribute"> occurrences.
     2. For EACH attribute property:
        - If ANY datasource exists in the widget (type="datasource"):
-         → The attribute property MUST include the EXACT datasource key.
+         → The attribute property MUST include the EXACT datasource key (if it belongs to the list).
          → If nested in an object, it MUST be prefixed with "../" (e.g., dataSource="../gridDS").
+       - If the widget is simple and NO datasource exists:
+         → The attribute property must NOT have a dataSource XML attribute.
     3. This rule applies EVEN IF:
        - The attribute is inside an object (type="object" isList="true")
        - The attribute is deeply nested inside propertyGroups
-    4. If ANY attribute property is missing dataSource:
+    4. If the widget uses a datasource, and an attribute property relates to it but is missing dataSource:
        → FIX IT BEFORE RETURNING OUTPUT
-    5. NEVER assume default binding — Mendix DOES NOT auto-bind attributes.
+    5. NEVER assume default binding for list attributes — Mendix DOES NOT auto-bind attributes.
     6. If multiple datasources exist:
        → Choose the most relevant one based on context (usually the main list datasource)
     7. FINAL CHECK:
-       - ZERO attribute properties without dataSource
-       - If any found → REWRITE XML before returning
+       - If type="datasource" exists → must have isList="true"
+       - If list-based → linked attributes must have dataSource attribute correctly set
+       - If simple UI context-based → ZERO attribute properties should have a dataSource
+       - If any found violating this → REWRITE XML before returning
 
     FAILURE TO FOLLOW THIS WILL BREAK THE WIDGET IN Mendix.
 
@@ -422,7 +454,39 @@ export async function generateWidgetCode(
     FAILURE WILL CAUSE:
     TS2339: Property 'get' does not exist on type 'EditableValue'
 
-    - Line 1 MUST be: import React, { createElement, useState, useRef, useEffect, useCallback } from "react";
+    ════════════════════════════════════════════
+    JSX NAMESPACE BAN (CRITICAL)
+    ════════════════════════════════════════════
+    ABSOLUTELY NO JSX TYPES ARE ALLOWED. NEVER use JSX.Element.
+    The JSX namespace is NOT available in the Mendix widget build environment.
+    Using it causes: RollupError: @rollup/plugin-typescript TS2503: Cannot find namespace 'JSX'.
+
+    Instead, use ReactNode from React for all component children and widget properties:
+    ❌ WRONG:  content?: JSX.Element;
+    ❌ WRONG:  children?: JSX.Element | JSX.Element[];
+    ❌ WRONG:  icon?: JSX.Element;
+    ✅ CORRECT: content?: ReactNode;
+    ✅ CORRECT: children?: ReactNode;
+    ✅ CORRECT: icon?: ReactNode;
+
+    Import ReactNode in the first line of your file:
+    import React, { createElement, ReactNode, ... } from "react";
+
+    ALSO NEVER USE:
+    - React.JSX.Element
+    - JSX.IntrinsicElements
+    - React.ReactElement (prefer ReactNode)
+    - Any reference whatsoever to the "JSX" namespace or word "JSX".
+
+    VALIDATION:
+    - Scan ALL type annotations and interfaces, especially the Props interface.
+    - If "JSX.Element" or ANY "JSX." appears anywhere → REPLACE with ReactNode immediately.
+    - If found → YOU MUST FIX IT before returning the final JSON.
+
+    FAILURE WILL CAUSE:
+    TS2503: Cannot find namespace 'JSX'. Your code will fail to compile.
+
+    - Line 1 MUST be: import React, { createElement, useState, useRef, useEffect, useCallback, ReactNode } from "react";
     - Use createElement() for ALL elements. NEVER use JSX angle-bracket syntax (<div>, <span>, etc.).
     - Use a named export: export function ${widgetName}(props: ${widgetName}Props) { ... }
     - Define a Props interface matching the XML property keys.
@@ -447,13 +511,32 @@ export async function generateWidgetCode(
       - EditableValue has a .setValue(newValue) method to SET the value.
       - NEVER write .getValue() or .getValue(x). It DOES NOT EXIST in the Mendix API (TS2551).
       - ActionValue has an .execute() method. NEVER write .run() or .executeAction().
-    - CRITICAL — REACT ERROR #31 PREVENTION:
-      Objects are NOT valid React children. NEVER pass a raw object/item into createElement as a child.
-      WRONG:   createElement("span", null, item)           // item is an object → React error #31
-      WRONG:   createElement("span", null, props.myAttr)   // myAttr is an EditableValue object → error
-      CORRECT: createElement("span", null, String(item.someField ?? ""))
-      CORRECT: createElement("span", null, props.myAttr?.value ?? "")
-      If unsure about a value's type, wrap it: String(value ?? "")
+    ════════════════════════════════════════════
+    REACT CHILD VALIDATION (CRITICAL)
+    ════════════════════════════════════════════
+
+    1. NEVER render objects directly in createElement children.
+
+    2. ALWAYS extract primitive values:
+       EditableValue → use .value
+       ListAttributeValue → use .get(item).value
+
+    3. ALWAYS wrap output safely:
+       String(value ?? "")
+
+    4. FORBIDDEN:
+       ❌ createElement("span", null, props.attr)
+       ❌ createElement("span", null, item)
+
+    5. REQUIRED:
+       ✅ createElement("span", null, String(props.attr?.value ?? ""))
+
+    6. FINAL CHECK:
+       - Scan all createElement calls
+       - Ensure children are NOT objects
+
+    FAILURE WILL CAUSE:
+    mxui.js [Client] Error: Minified React error #31; visit https://reactjs.org/docs/error-decoder.html?invariant=31&args[]=object%20with%20keys%20%7Bs%2C%20e%2C%20c%2C%20constructor%7D
     - For STATIC widgets (like an India Blog with no inputs), avoid any Mendix properties in XML and Props. Just use a clean React component.
     ${isNative ? '- Use components from "react-native" (View, Text, StyleSheet).' : '- Use standard React/HTML tags (div, span, etc.) via createElement.'}
 
